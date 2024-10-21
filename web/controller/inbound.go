@@ -27,6 +27,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g = g.Group("/inbound")
 
 	g.POST("/list", a.getInbounds)
+	g.POST("/v2/list", a.getInboundsV2)
 	g.POST("/add", a.addInbound)
 	g.POST("/del/:id", a.delInbound)
 	g.POST("/update/:id", a.updateInbound)
@@ -35,6 +36,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/addClient", a.addInboundClient)
 	g.POST("/:id/delClient/:clientId", a.delInboundClient)
 	g.POST("/updateClient/:clientId", a.updateInboundClient)
+	g.POST("/v2/updateClient/:clientId", a.updateInboundClientV2)
 	g.POST("/:id/resetClientTraffic/:email", a.resetClientTraffic)
 	g.POST("/resetAllTraffics", a.resetAllTraffics)
 	g.POST("/resetAllClientTraffics/:id", a.resetAllClientTraffics)
@@ -50,7 +52,89 @@ func (a *InboundController) getInbounds(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.obtain"), err)
 		return
 	}
+
 	jsonObj(c, inbounds, nil)
+}
+
+type Config struct {
+	Clients    []Client `json:"clients"`
+	Protocol   string   `json:"protocol"`
+	Decryption string   `json:"decryption"`
+}
+
+type Client struct {
+	Email  string `json:"email"`
+	Enable bool   `json:"enable"`
+	ID     string `json:"id"`
+	SubID  string `json:"subId"`
+}
+
+func (a *InboundController) getInboundsV2(c *gin.Context) {
+	user := session.GetLoginUser(c)
+	inbounds, err := a.inboundService.GetInbounds(user.Id)
+	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.obtain"), err)
+		return
+	}
+
+	var resp Config
+	json.Unmarshal([]byte(inbounds[0].Settings), &resp)
+	resp.Protocol = string(inbounds[0].Protocol)
+
+	jsonObj(c, resp, nil)
+}
+
+func (a *InboundController) updateInboundClientV2(c *gin.Context) {
+	user := session.GetLoginUser(c)
+	inbounds, err := a.inboundService.GetInbounds(user.Id)
+	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.obtain"), err)
+		return
+	}
+	id := inbounds[0].Id
+
+	clientId := c.Param("clientId")
+
+	request := &struct {
+		Email  string `json:"email"`
+		Enable bool   `json:"enable"`
+	}{}
+
+	if err := c.ShouldBind(request); err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.inbounds.update"), err)
+		return
+	}
+
+	inbound := &model.Inbound{
+		Id: id,
+		Settings: fmt.Sprintf(`{
+			"clients": [{
+				"id": "%s",
+				"flow": "",
+				"email": "%s",
+				"limitIp": 0,
+				"enable": %t,
+				"totalGB": 0,
+				"expiryTime": 0,
+				"tgId": "",
+				"subId": "",
+				"reset": 0
+			}]
+		}`, clientId, request.Email, request.Enable),
+	}
+
+	fmt.Printf("v2: %+v\n", inbound)
+	needRestart := true
+
+	needRestart, err = a.inboundService.UpdateInboundClient(inbound, clientId)
+	if err != nil {
+		jsonMsg(c, "Something went wrong!", err)
+		return
+	}
+	jsonMsg(c, "Client updated", nil)
+	if needRestart {
+		a.xrayService.SetToNeedRestart()
+	}
 }
 
 func (a *InboundController) getInbound(c *gin.Context) {
@@ -220,6 +304,8 @@ func (a *InboundController) updateInboundClient(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.inbounds.update"), err)
 		return
 	}
+
+	fmt.Printf("v1: %+v\n", inbound)
 
 	needRestart := true
 

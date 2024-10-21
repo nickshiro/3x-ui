@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"embed"
 	"html/template"
-	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -147,16 +146,34 @@ func (s *Server) getHtmlTemplate(funcMap template.FuncMap) (*template.Template, 
 	return t, nil
 }
 
-func (s *Server) initRouter() (*gin.Engine, error) {
-	if config.IsDebug() {
-		gin.SetMode(gin.DebugMode)
-	} else {
-		gin.DefaultWriter = io.Discard
-		gin.DefaultErrorWriter = io.Discard
-		gin.SetMode(gin.ReleaseMode)
+func CORSMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// c.Writer.Header().Set("Content-Type", "application/json")
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "https://t9wzx5sr-3000.euw.devtunnels.ms")
+		c.Writer.Header().Set("Access-Control-Max-Age", "86400")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE, UPDATE")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, X-Max")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(200)
+		} else {
+			c.Next()
+		}
 	}
+}
+
+func (s *Server) initRouter() (*gin.Engine, error) {
+	// if config.IsDebug() {
+	// 	gin.SetMode(gin.DebugMode)
+	// } else {
+	// 	gin.DefaultWriter = io.Discard
+	// 	gin.DefaultErrorWriter = io.Discard
+	// 	gin.SetMode(gin.ReleaseMode)
+	// }
 
 	engine := gin.Default()
+	engine.Use(CORSMiddleware())
 
 	webDomain, err := s.settingService.GetWebDomain()
 	if err != nil {
@@ -275,21 +292,12 @@ func (s *Server) startTask() {
 			logger.Errorf("Add NewStatsNotifyJob error[%s], Runtime[%s] invalid, will run default", err, runtime)
 			runtime = "@daily"
 		}
-		logger.Infof("Tg notify enabled,run at %s", runtime)
-		_, err = s.cron.AddJob(runtime, job.NewStatsNotifyJob())
-		if err != nil {
-			logger.Warning("Add NewStatsNotifyJob error", err)
-			return
-		}
-
-		// check for Telegram bot callback query hash storage reset
-		s.cron.AddJob("@every 2m", job.NewCheckHashStorageJob())
 
 		// Check CPU load and alarm to TgBot if threshold passes
-		cpuThreshold, err := s.settingService.GetTgCpu()
-		if (err == nil) && (cpuThreshold > 0) {
-			s.cron.AddJob("@every 10s", job.NewCheckCpuJob())
-		}
+		// cpuThreshold, err := s.settingService.GetTgCpu()
+		// if (err == nil) && (cpuThreshold > 0) {
+		// 	s.cron.AddJob("@every 10s", job.NewCheckCpuJob())
+		// }
 	} else {
 		s.cron.Remove(entry)
 	}

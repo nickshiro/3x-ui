@@ -29,7 +29,7 @@ func (a *APIController) initRouter(g *gin.RouterGroup) {
 		Path    string
 		Handler gin.HandlerFunc
 	}{
-		{"GET", "/createbackup", a.createBackup},
+		// {"GET", "/createbackup", a.createBackup},
 		{"GET", "/list", a.inboundController.getInbounds},
 		{"GET", "/get/:id", a.inboundController.getInbound},
 		{"GET", "/getClientTraffics/:email", a.inboundController.getClientTraffics},
@@ -52,8 +52,4 @@ func (a *APIController) initRouter(g *gin.RouterGroup) {
 	for _, route := range inboundRoutes {
 		g.Handle(route.Method, route.Path, route.Handler)
 	}
-}
-
-func (a *APIController) createBackup(c *gin.Context) {
-	a.Tgbot.SendBackupToAdmins()
 }
